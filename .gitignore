@@ -1,0 +1,6 @@
+# 工具本地数据
+.workbuddy/
+.wbapp_*.genie
+
+# 开发过程截图
+_shots/

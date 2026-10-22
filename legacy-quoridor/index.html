@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>堵路棋 · Quoridor</title>
+<style>
+  :root{
+    --bg:#f4f1ea; --panel:#ffffff; --line:#d8d2c4; --ink:#2b2a26; --sub:#7a756a;
+    --red:#d64a3a; --blue:#3a6fd6; --accent:#c9a227;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+    background:var(--bg); color:var(--ink);
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .wrap{display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; justify-content:center;}
+  .board-card{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:18px; box-shadow:0 2px 12px rgba(60,50,30,.08);
+  }
+  svg{display:block; border-radius:8px; touch-action:none;}
+  @keyframes dotpulse{0%,100%{opacity:.3}50%{opacity:.9}}
+  .move-dot{animation:dotpulse 1.3s ease-in-out infinite;}
+  @keyframes anchorPulse{0%{transform:scale(1);opacity:.9}100%{transform:scale(2.2);opacity:0}}
+  .anchor-pulse{transform-box:fill-box; transform-origin:center; animation:anchorPulse 1s ease-out infinite;}
+  @keyframes wallDrop{0%{transform:scale(1.5);opacity:.15}65%{transform:scale(.96)}100%{transform:scale(1);opacity:1}}
+  .wall-drop{transform-box:fill-box; transform-origin:center; animation:wallDrop .3s ease-out;}
+  .hint{font-size:12px; color:var(--sub); margin-top:10px; line-height:1.7;}
+  .side{
+    width:280px; display:flex; flex-direction:column; gap:14px;
+  }
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:16px; box-shadow:0 2px 12px rgba(60,50,30,.08);
+  }
+  h1{font-size:20px; letter-spacing:2px;}
+  .turn-row{display:flex; align-items:center; gap:10px; margin-top:10px;}
+  .turn-dot{width:14px; height:14px; border-radius:50%; flex:none;}
+  .turn-dot.R{background:var(--red);} .turn-dot.B{background:var(--blue);}
+  .turn-text{font-size:15px; font-weight:600;}
+  .wall-counts{display:flex; gap:16px; margin-top:10px; font-size:13px; color:var(--sub);}
+  .wall-counts b{color:var(--ink); font-size:15px;}
+  .modes{display:flex; gap:8px;}
+  .btn{
+    flex:1; padding:8px 0; border:1px solid var(--line); border-radius:8px;
+    background:#faf8f2; color:var(--ink); font-size:13px; cursor:pointer; transition:.15s;
+  }
+  .btn:hover{background:#f0ece1;}
+  .btn.active{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .levels{display:flex; flex-direction:column; gap:8px;}
+  .lv-btn{
+    text-align:left; padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+    background:#faf8f2; cursor:pointer; font-size:13px; transition:.15s; color:var(--ink);
+  }
+  .lv-btn small{display:block; color:var(--sub); margin-top:2px;}
+  .lv-btn:hover{background:#f0ece1;}
+  .lv-btn.active{border-color:var(--accent); background:#fbf4dd;}
+  .btn-row{display:flex; gap:8px;}
+  .rules{font-size:12px; color:var(--sub); line-height:1.8;}
+  .rules b{color:var(--ink);}
+  .toast{
+    position:fixed; left:50%; top:24px; transform:translateX(-50%);
+    background:#2b2a26; color:#fff; padding:10px 20px; border-radius:8px;
+    font-size:14px; opacity:0; pointer-events:none; transition:.25s; z-index:50;
+  }
+  .toast.show{opacity:.95;}
+  /* 结算浮层 */
+  .overlay{
+    position:fixed; inset:0; background:rgba(30,26,18,.45); display:none;
+    align-items:center; justify-content:center; z-index:40;
+  }
+  .overlay.show{display:flex;}
+  .dialog{
+    background:#fff; border-radius:16px; padding:32px 40px; text-align:center;
+    box-shadow:0 8px 40px rgba(0,0,0,.25);
+  }
+  .dialog h2{font-size:24px; margin-bottom:6px;}
+  .dialog p{color:var(--sub); font-size:14px; margin-bottom:20px;}
+  .dialog .btn-row{justify-content:center;}
+  .dialog .btn{padding:10px 22px; flex:none;}
+  @media (max-width:900px){
+    .side{width:100%; max-width:660px;}
+    body{padding:12px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="board-card">
+    <svg id="board" width="660" height="660" viewBox="0 0 660 660"></svg>
+  </div>
+
+  <div class="side">
+    <div class="panel">
+      <h1>堵路棋</h1>
+      <div class="turn-row">
+        <div class="turn-dot" id="turnDot"></div>
+        <div class="turn-text" id="turnText"></div>
+      </div>
+      <div class="wall-counts">
+        <span>红方墙 <b id="wR">10</b></span>
+        <span>蓝方墙 <b id="wB">10</b></span>
+        <span>回合 <b id="moveNo">1</b></span>
+      </div>
+      <div class="hint" id="hint"></div>
+    </div>
+
+    <div class="panel">
+      <div class="modes" style="margin-bottom:10px">
+        <button class="btn active" id="modeAI">人机对战</button>
+        <button class="btn" id="modePVP">双人对战</button>
+      </div>
+      <div class="levels" id="levels"></div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn" id="btnUndo">悔棋</button>
+        <button class="btn" id="btnRestart">重新开始</button>
+      </div>
+    </div>
+
+    <div class="panel rules">
+      <b>规则</b><br>
+      · 每回合二选一：<b>走一格</b>（点棋盘上的金色圆点）或 <b>画一条长 2 的墙</b>。<br>
+      · 画墙：在网格交点处<b>按住拖动</b>，墙从起点跟着手指长出来，拖满 2 格松手落墙；不能与已有墙重叠或十字相交。<br>
+      · 红球从下往上冲顶，蓝球从上往下冲底，<b>先到达对方底线者胜</b>。<br>
+      · 两个球<b>不能重叠</b>：不能走到对方所在的格子（堵在对方前面本身就是战术）。<br>
+      · 若一方被彻底堵死且墙已用完，该回合自动跳过。<br>
+      · 铁律：任何一堵墙落下后，<b>两个球都必须仍有一条通往各自终点的路</b>，否则不能落。
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="overlay" id="overlay">
+  <div class="dialog">
+    <h2 id="winTitle"></h2>
+    <p id="winDesc"></p>
+    <div class="btn-row">
+      <button class="btn" id="btnAgain">再来一局</button>
+      <button class="btn" id="btnClose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ================= 常量 ================= */
+const N = 9;               // 9x9 棋盘
+const S = 64;              // 格子边长
+const M = 40;              // 边距
+const T = 8;               // 墙厚
+const SIZE = M*2 + N*S;    // 画布尺寸 656 -> 用 660
+const CV = 660;
+const RED = 'R', BLUE = 'B';
+
+/* ================= 关卡 ================= */
+const LEVELS = [
+  { id:0, name:'第 1 关 · 新手村', desc:'空棋盘，AI 偶尔才画墙', ai:'easy',   aiWalls:10,
+    walls:[] },
+  { id:1, name:'第 2 关 · 回廊',   desc:'中场有石墙迷阵，AI 会封路', ai:'normal', aiWalls:10,
+    walls:[['H',3,2],['H',3,3],['H',3,5],['H',3,6],['V',5,2],['V',5,3],['V',5,5],['V',5,6]] },
+  { id:2, name:'第 3 关 · 棋逢对手', desc:'复杂地形，AI 全力以赴', ai:'hard', aiWalls:12,
+    walls:[['H',2,1],['H',2,6],['V',2,4],['H',4,3],['V',4,0],['V',4,7],['H',6,2],['H',6,5]] },
+];
+
+/* ================= 状态 ================= */
+let st = null;          // 当前状态
+let history = [];       // 悔棋快照
+let mode = 'ai';        // ai | pvp
+let levelId = 0;
+let busy = false;       // AI 思考/动画中
+let drag = null;        // 拖动画墙：{kx,ky,dir,sign,ext,full,cand,oob}
+let placedFx = null;    // 落墙动效：{kind,r,c,t}
+let pendingAnim = null; // 走子动画：{from,color}
+let lastWallTime = 0;   // 防止画墙后误触发走子
+
+const $ = id => document.getElementById(id);
+
+function newState(){
+  const lv = LEVELS[levelId];
+  return {
+    ball:{ [RED]:{r:N-1, c:(N-1)/2}, [BLUE]:{r:0, c:(N-1)/2} },
+    hWalls:new Set(), vWalls:new Set(),
+    wallsLeft:{ [RED]:10, [BLUE]: mode==='ai' ? lv.aiWalls : 10 },
+    turn:RED, moveNo:1, over:null,
+  };
+}
+function snapshot(){ return JSON.stringify({ ...st, hWalls:[...st.hWalls], vWalls:[...st.vWalls] }); }
+function restore(s){
+  const o = JSON.parse(s);
+  o.hWalls = new Set(o.hWalls); o.vWalls = new Set(o.vWalls);
+  st = o;
+}
+
+/* ================= 规则核心 ================= */
+// 两格之间是否被墙挡住
+function blocked(a, b){
+  if (b.r === a.r+1) return st.hWalls.has(key('H', a.r, a.c))   || st.hWalls.has(key('H', a.r, a.c-1));
+  if (b.r === a.r-1) return st.hWalls.has(key('H', b.r, b.c))   || st.hWalls.has(key('H', b.r, b.c-1));
+  if (b.c === a.c+1) return st.vWalls.has(key('V', a.r, a.c))   || st.vWalls.has(key('V', a.r-1, a.c));
+  if (b.c === a.c-1) return st.vWalls.has(key('V', b.r, b.c))   || st.vWalls.has(key('V', b.r-1, b.c));
+  return false;
+}
+const key = (k,r,c) => k + ':' + r + ':' + c;
+
+// 墙位是否合法（不重叠、不相交、不锁死任何球）
+function validWall(kind, r, c){
+  if (r<0||r>N-2||c<0||c>N-2) return false;
+  if (kind==='H'){
+    if (st.hWalls.has(key('H',r,c)) || st.hWalls.has(key('H',r,c-1)) || st.hWalls.has(key('H',r,c+1))) return false;
+    if (st.vWalls.has(key('V',r,c))) return false;   // 十字相交
+  } else {
+    if (st.vWalls.has(key('V',r,c)) || st.vWalls.has(key('V',r-1,c)) || st.vWalls.has(key('V',r+1,c))) return false;
+    if (st.hWalls.has(key('H',r,c))) return false;
+  }
+  st[kind==='H'?'hWalls':'vWalls'].add(key(kind,r,c));
+  const ok = bfs(st.ball[RED], 0).dist > 0 && bfs(st.ball[BLUE], N-1).dist > 0;
+  st[kind==='H'?'hWalls':'vWalls'].delete(key(kind,r,c));
+  return ok;
+}
+
+// BFS：返回 {dist, prev}，goalRow 为目标行；dist 为 0 表示不可达
+function bfs(start, goalRow, extraBlock){
+  const dist = Array.from({length:N},()=>Array(N).fill(-1));
+  const prev = Array.from({length:N},()=>Array(N).fill(null));
+  const q = [[start.r, start.c]];
+  dist[start.r][start.c] = 0;
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  let head = 0;
+  while (head < q.length){
+    const [r,c] = q[head++];
+    if (r === goalRow) break;
+    for (const [dr,dc] of dirs){
+      const nr=r+dr, nc=c+dc;
+      if (nr<0||nr>=N||nc<0||nc>=N) continue;
+      if (dist[nr][nc] !== -1) continue;
+      if (blocked({r,c},{r:nr,c:nc})) continue;
+      dist[nr][nc] = dist[r][c]+1;
+      prev[nr][nc] = {r,c};
+      q.push([nr,nc]);
+    }
+  }
+  let best = Infinity, bestCell = null;
+  for (let c=0;c<N;c++){
+    const d = dist[goalRow][c];
+    if (d !== -1 && d < best){ best = d; bestCell = {r:goalRow, c}; }
+  }
+  // 回溯路径
+  const path = [];
+  let cur = bestCell;
+  while (cur){ path.unshift(cur); cur = prev[cur.r][cur.c]; }
+  return { dist: best===Infinity?0:best, path };
+}
+// 走子候选：按颜色取（需排除对方所在格——两球不能重叠）
+function legalMoves(color){
+  const ball = st.ball[color];
+  const other = st.ball[color===RED ? BLUE : RED];
+  const out = [];
+  for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    const nr=ball.r+dr, nc=ball.c+dc;
+    if (nr<0||nr>=N||nc<0||nc>=N) continue;
+    if (nr===other.r && nc===other.c) continue;   // 不能走到对方身上
+    if (blocked(ball, {r:nr,c:nc})) continue;
+    out.push({r:nr,c:nc});
+  }
+  return out;
+}
+function occupiedByOpponent(color, r, c){
+  const o = st.ball[color===RED ? BLUE : RED];
+  return o.r===r && o.c===c;
+}
+// 这一方还有没有可做的事（能走子 或 还有墙可放）
+function hasOptions(color){ return legalMoves(color).length>0 || st.wallsLeft[color]>0; }
+
+/* ================= AI ================= */
+function aiMove(){
+  const me = st.ball[BLUE], opp = st.ball[RED];
+  const myPath = bfs(me, N-1), oppPath = bfs(opp, 0);
+
+  if (st.wallsLeft[BLUE] > 0){
+    let best = null, bestScore = 0;
+    for (let r=0;r<N-1;r++) for (let c=0;c<N-1;c++) for (const kind of ['H','V']){
+      if (!validWall(kind,r,c)) continue;
+      st[kind==='H'?'hWalls':'vWalls'].add(key(kind,r,c));
+      const nMy = bfs(me, N-1).dist, nOpp = bfs(opp, 0).dist;
+      st[kind==='H'?'hWalls':'vWalls'].delete(key(kind,r,c));
+      // 得分 = 拖慢对手 - 自己绕路代价（自身绕路惩罚加倍）
+      const score = (nOpp - oppPath.dist) - 2*Math.max(0, nMy - myPath.dist);
+      if (score > bestScore){ bestScore = score; best = {kind,r,c}; }
+    }
+    const wallChance = LEVELS[levelId].ai==='easy' ? 0.25
+                     : LEVELS[levelId].ai==='normal' ? 0.7 : 1;
+    // 落后或僵持时更倾向画墙
+    const behind = oppPath.dist <= myPath.dist;
+    if (best && bestScore >= 1 && Math.random() < wallChance * (behind?1:0.6)){
+      return {type:'wall', ...best};
+    }
+  }
+  // 走子：沿最短路（不能踩到红球身上）
+  const legal = legalMoves(BLUE);
+  if (legal.length === 0) return null;            // 被彻底堵住，交给跳过逻辑
+  const path = myPath.path;
+  const ok = m => legal.some(l => l.r===m.r && l.c===m.c);
+  if (path.length >= 2 && ok(path[1])) return {type:'move', to:path[1]};
+  // 最短路被红球占了：挑一个让剩余距离最短的合法走法
+  let best = null, bd = Infinity;
+  for (const m of legal){
+    const d = bfs(m, N-1).dist;
+    if (d > 0 && d < bd){ bd = d; best = m; }
+  }
+  return {type:'move', to: best || legal[Math.floor(Math.random()*legal.length)]};
+}
+
+/* ================= 渲染 ================= */
+const svg = $('board');
+function draw(){
+  svg.innerHTML = '';
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    (parent||svg).appendChild(e); return e;
+  };
+
+  // 背景
+  el('rect',{x:0,y:0,width:CV,height:CV,fill:'#efe9dc',rx:8});
+  // 终点区着色：红方目标=第0行，蓝方目标=第8行
+  el('rect',{x:M,y:M,width:N*S,height:S,fill:'#d64a3a',opacity:.10});
+  el('rect',{x:M,y:M+(N-1)*S,width:N*S,height:S,fill:'#3a6fd6',opacity:.10});
+
+  // 格线
+  for (let i=0;i<=N;i++){
+    el('line',{x1:M, y1:M+i*S, x2:M+N*S, y2:M+i*S, stroke:'#c9c2b0','stroke-width':i===0||i===N?2:1});
+    el('line',{x1:M+i*S, y1:M, x2:M+i*S, y2:M+N*S, stroke:'#c9c2b0','stroke-width':i===0||i===N?2:1});
+  }
+  // 可走位置提示（人类回合）
+  if (!st.over && !busy){
+    const me = mode==='ai' ? RED : st.turn;
+    if (st.turn === me){
+      for (const m of legalMoves(me)){
+        el('circle',{cx:M+m.c*S+S/2, cy:M+m.r*S+S/2, r:11, fill:'#c9a227', class:'move-dot'});
+      }
+    }
+  }
+  // 墙（新落的墙带回弹动效）
+  const dropCls = (kind,r,c) =>
+    (placedFx && Date.now()-placedFx.t < 500 && placedFx.kind===kind && placedFx.r===r && placedFx.c===c)
+      ? 'wall-drop' : null;
+  for (const k of st.hWalls){
+    const [,r,c] = k.split(':').map(Number);
+    const cls = dropCls('H',r,c);
+    el('rect',{x:M+c*S, y:M+(r+1)*S-T/2, width:2*S, height:T, rx:3, fill:'#5b544a', ...(cls?{class:cls}:{})});
+  }
+  for (const k of st.vWalls){
+    const [,r,c] = k.split(':').map(Number);
+    const cls = dropCls('V',r,c);
+    el('rect',{x:M+(c+1)*S-T/2, y:M+r*S, width:T, height:2*S, rx:3, fill:'#5b544a', ...(cls?{class:cls}:{})});
+  }
+  // 拖动画墙预览：起点固定，一端跟手生长
+  if (drag && !st.over && !busy){
+    const col = st.turn===RED ? '#d64a3a' : '#3a6fd6';
+    const ax = M+drag.kx*S, ay = M+drag.ky*S;
+    el('circle',{cx:ax, cy:ay, r:7, fill:col, class:'anchor-pulse'});
+    if (!drag.dir){
+      el('text',{x:M+N*S/2, y:M/2+6,'text-anchor':'middle','font-size':13,fill:'#7a756a'},svg)
+        .textContent = '沿网格线拖动，墙会跟着你的手指长出来';
+    } else {
+      const len = Math.max(.35, drag.ext)*S*drag.sign;
+      const seg = drag.dir==='H'
+        ? {x:Math.min(ax,ax+len), y:ay-T/2, width:Math.abs(len), height:T}
+        : {x:ax-T/2, y:Math.min(ay,ay+len), width:T, height:Math.abs(len)};
+      el('rect',{...seg, rx:3, fill:col, opacity:.45});
+      const tipx = drag.dir==='H' ? ax+len : ax;
+      const tipy = drag.dir==='V' ? ay+len : ay;
+      el('circle',{cx:tipx, cy:tipy, r:9, fill:'#fff', stroke:col, 'stroke-width':3});
+      if (drag.full && drag.cand){
+        const k = drag.cand;
+        const attrs = k.kind==='H'
+          ? {x:M+k.c*S, y:M+(k.r+1)*S-T/2, width:2*S, height:T}
+          : {x:M+(k.c+1)*S-T/2, y:M+k.r*S, width:T, height:2*S};
+        el('rect',{...attrs, rx:3, fill: k.valid?col:'#c0392b', opacity: k.valid?.85:.9});
+        if (!k.valid){
+          el('text',{x:M+N*S/2, y:M/2+6,'text-anchor':'middle','font-size':15,fill:'#c0392b','font-weight':700},svg)
+            .textContent = drag.oob ? '墙要完全落在棋盘内部' : '不能落在这里：重叠/相交，或把球锁死';
+        }
+      } else {
+        el('text',{x:M+N*S/2, y:M/2+6,'text-anchor':'middle','font-size':13,fill:'#7a756a'},svg)
+          .textContent = '拖满 2 格后松手放墙';
+      }
+    }
+  }
+  // 球
+  drawBall(st.ball[RED],  '#d64a3a');
+  drawBall(st.ball[BLUE], '#3a6fd6');
+  pendingAnim = null;
+
+  // 交互层：格子点击（走子）
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++){
+    const rect = el('rect',{x:M+c*S, y:M+r*S, width:S, height:S, fill:'transparent', cursor:'pointer'});
+    rect.addEventListener('click', () => onCellClick(r,c));
+  }
+  updatePanel();
+}
+function drawBall(b, color){
+  const NS='http://www.w3.org/2000/svg';
+  const g = document.createElementNS(NS,'g');
+  svg.appendChild(g);
+  const cx = M + b.c*S + S/2, cy = M + b.r*S + S/2;
+  const c1 = document.createElementNS(NS,'circle');
+  c1.setAttribute('cx',cx); c1.setAttribute('cy',cy); c1.setAttribute('r',22);
+  c1.setAttribute('fill',color); c1.setAttribute('stroke','#fff'); c1.setAttribute('stroke-width',3);
+  g.appendChild(c1);
+  const hi = document.createElementNS(NS,'circle');
+  hi.setAttribute('cx',cx-7); hi.setAttribute('cy',cy-8); hi.setAttribute('r',6);
+  hi.setAttribute('fill','#fff'); hi.setAttribute('opacity',.5);
+  g.appendChild(hi);
+  // 走子滑动动画
+  if (pendingAnim && pendingAnim.color===color){
+    const dx=(M+pendingAnim.from.c*S+S/2)-cx, dy=(M+pendingAnim.from.r*S+S/2)-cy;
+    g.style.transition='none';
+    g.style.transform=`translate(${dx}px,${dy}px)`;
+    requestAnimationFrame(()=>{
+      g.style.transition='transform .22s ease';
+      g.style.transform='translate(0,0)';
+    });
+  }
+}
+
+/* ================= 交互 ================= */
+function onCellClick(r,c){
+  if (st.over || busy) return;
+  if (Date.now() - lastWallTime < 350) return;   // 刚画完墙，忽略误触
+  if (mode==='ai' && st.turn !== RED) return;
+  const me = st.ball[st.turn];
+  const isAdj = Math.abs(me.r-r)+Math.abs(me.c-c) === 1;
+  if (!isAdj || blocked(me,{r,c})) return;
+  if (occupiedByOpponent(st.turn, r, c)){ toast('不能走到对方所在的格子'); return; }
+  pushHistory();
+  pendingAnim = {from:{...me}, color:st.turn};
+  st.ball[st.turn] = {r,c};
+  endTurn();
+}
+
+/* ===== 拖动画墙：在交点按住 → 墙从起点长出、一端跟手 → 满 2 格松手落墙 ===== */
+const ANCHOR_HIT = 26;   // 起点吸附半径（px）
+const DIR_TH = 10;       // 方向判定最小位移（px）
+function svgXY(e){
+  const b = svg.getBoundingClientRect();
+  return { x:(e.clientX-b.left)*(CV/b.width), y:(e.clientY-b.top)*(CV/b.height) };
+}
+function nearestAnchor(x,y){
+  const fx=(x-M)/S, fy=(y-M)/S;
+  if (fx<-0.1 || fx>N+0.1 || fy<-0.1 || fy>N+0.1) return null;
+  const kx=Math.round(fx), ky=Math.round(fy);
+  if (Math.hypot(x-(M+kx*S), y-(M+ky*S)) > ANCHOR_HIT) return null;
+  return {kx,ky};
+}
+svg.addEventListener('pointerdown', e=>{
+  if (st.over || busy) return;
+  if (mode==='ai' && st.turn!==RED) return;
+  if (st.wallsLeft[st.turn]<=0) return;
+  const {x,y} = svgXY(e);
+  const a = nearestAnchor(x,y);
+  if (!a) return;
+  drag = {...a, dir:null, sign:1, ext:0, full:false, cand:null, oob:false};
+  try{ svg.setPointerCapture(e.pointerId); }catch(_){}
+  e.preventDefault();
+  draw();
+});
+svg.addEventListener('pointermove', e=>{
+  if (!drag) return;
+  const {x,y} = svgXY(e);
+  const fx=(x-M)/S, fy=(y-M)/S;
+  if (!drag.dir){
+    const dx=x-(M+drag.kx*S), dy=y-(M+drag.ky*S);
+    if (Math.hypot(dx,dy) < DIR_TH) return;
+    drag.dir = Math.abs(dx)>=Math.abs(dy) ? 'H' : 'V';
+  }
+  // 跟手端：沿选定轴伸缩 0~2 格，可往两边拖
+  const d = drag.dir==='H' ? fx-drag.kx : fy-drag.ky;
+  drag.sign = d>=0 ? 1 : -1;
+  drag.ext = Math.min(2, Math.abs(d));
+  drag.full = drag.ext >= 1.6;
+  drag.cand = null; drag.oob = false;
+  if (drag.full){
+    let kind,r,c;
+    if (drag.dir==='H'){ kind='H'; r=drag.ky-1; c=drag.sign>0?drag.kx:drag.kx-2; }
+    else               { kind='V'; c=drag.kx-1; r=drag.sign>0?drag.ky:drag.ky-2; }
+    drag.oob = r<0||r>N-2||c<0||c>N-2;
+    drag.cand = {kind, r, c, valid: !drag.oob && validWall(kind,r,c)};
+  }
+  draw();
+});
+function finishDrag(commit){
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (commit && d.cand && d.cand.valid){
+    const k = d.cand;
+    pushHistory();
+    st[k.kind==='H'?'hWalls':'vWalls'].add(key(k.kind,k.r,k.c));
+    st.wallsLeft[st.turn]--;
+    placedFx = {kind:k.kind, r:k.r, c:k.c, t:Date.now()};
+    lastWallTime = Date.now();
+    draw();
+    endTurn();
+    return;
+  }
+  if (commit){
+    if (d.cand && !d.cand.valid)
+      toast(d.oob ? '墙要完全落在棋盘内部' : '不能落在这里：会重叠/相交，或把球锁死');
+    else if (d.dir && !d.full)
+      toast('墙长固定为 2 格：再拖远一点');
+  }
+  draw();
+}
+svg.addEventListener('pointerup',     ()=> finishDrag(true));
+svg.addEventListener('pointercancel', ()=> finishDrag(false));
+function endTurn(){
+  const b = st.ball[st.turn];
+  const goal = st.turn===RED ? 0 : N-1;
+  if (b.r === goal){
+    st.over = st.turn;
+    draw(); showWin(); return;
+  }
+  advanceTurn();
+}
+// 切换回合；若对方被彻底堵死且无墙可放，则跳过一回合
+function advanceTurn(){
+  st.turn = st.turn===RED ? BLUE : RED;
+  if (st.turn === RED) st.moveNo++;
+  drag = null;
+  draw();
+  if (!st.over && !hasOptions(st.turn)){
+    toast((st.turn===RED?'红方':'蓝方') + '无路可走且没有墙，跳过一回合');
+    st.turn = st.turn===RED ? BLUE : RED;
+    if (st.turn === RED) st.moveNo++;
+    draw();
+  }
+  if (mode==='ai' && st.turn===BLUE && !st.over){
+    busy = true;
+    setTimeout(()=>{
+      const mv = aiMove();
+      if (mv && mv.type==='move'){ pendingAnim = {from:{...st.ball[BLUE]}, color:BLUE}; st.ball[BLUE] = mv.to; }
+      else if (mv && mv.type==='wall'){ st[mv.kind==='H'?'hWalls':'vWalls'].add(key(mv.kind,mv.r,mv.c)); st.wallsLeft[BLUE]--; placedFx = {kind:mv.kind,r:mv.r,c:mv.c,t:Date.now()}; }
+      const bb = st.ball[BLUE];
+      if (bb.r === N-1){ st.over = BLUE; busy=false; draw(); showWin(); return; }
+      busy = false;
+      advanceTurn();
+      return;
+    }, 550);
+  }
+}
+function pushHistory(){ history.push(snapshot()); if (history.length>200) history.shift(); }
+function undo(){
+  if (busy || history.length===0) return;
+  if (mode==='ai'){
+    restore(history.pop());
+    // 若撤完轮到 AI，说明只撤了半步，再撤一步回到人类回合
+    if (st.turn === BLUE && history.length>0) restore(history.pop());
+  } else restore(history.pop());
+  st.over = null;
+  drag = null;
+  draw();
+}
+
+/* ================= UI 杂项 ================= */
+let toastTimer;
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+function updatePanel(){
+  const humanTurn = mode==='pvp' || st.turn===RED;
+  $('turnDot').className = 'turn-dot ' + st.turn;
+  if (st.over){
+    $('turnText').textContent = (st.over===RED?'红方':'蓝方') + ' 获胜！';
+  } else {
+    $('turnText').textContent = busy ? '蓝方（AI）思考中…'
+      : (st.turn===RED?'红方':'蓝方') + (mode==='ai'&&st.turn===BLUE?'（AI）':'') + ' 行动';
+  }
+  $('wR').textContent = st.wallsLeft[RED];
+  $('wB').textContent = st.wallsLeft[BLUE];
+  $('moveNo').textContent = st.moveNo;
+  const h = $('hint');
+  if (st.over) h.textContent = '对局结束，点「重新开始」再来一局';
+  else if (busy) h.textContent = 'AI 思考中…';
+  else if (mode==='ai') h.textContent = '走子：点金色圆点｜画墙：在网格交点按住拖动，墙跟着手长出来，满 2 格松手';
+  else h.textContent = (st.turn===RED?'红方':'蓝方') + '：走子点金色圆点，或在网格交点按住拖动画墙';
+}
+function showWin(){
+  const winner = st.over===RED ? '红方' : '蓝方';
+  $('winTitle').textContent = winner + ' 到达终点！';
+  $('winTitle').style.color = st.over===RED ? '#d64a3a' : '#3a6fd6';
+  $('winDesc').textContent = mode==='ai'
+    ? (st.over===RED ? '你赢了，AI 甘拜下风。' : 'AI 率先冲线，再战一局？')
+    : winner + '率先冲线。';
+  $('overlay').classList.add('show');
+}
+function loadLevels(){
+  const box = $('levels'); box.innerHTML='';
+  if (mode==='pvp'){
+    const d = document.createElement('div');
+    d.className='lv-btn active';
+    d.innerHTML='双人对战<small>空棋盘 · 各 10 面墙 · 红先蓝后</small>';
+    box.appendChild(d);
+    return;
+  }
+  LEVELS.forEach(lv=>{
+    const b = document.createElement('button');
+    b.className = 'lv-btn' + (lv.id===levelId?' active':'');
+    b.innerHTML = lv.name + '<small>' + lv.desc + ' · AI ' + lv.aiWalls + ' 面墙</small>';
+    b.onclick = ()=>{ levelId = lv.id; restart(); renderModeBtns(); loadLevels(); };
+    box.appendChild(b);
+  });
+}
+function renderModeBtns(){
+  $('modeAI').classList.toggle('active', mode==='ai');
+  $('modePVP').classList.toggle('active', mode==='pvp');
+}
+function restart(){
+  st = newState();
+  // 关卡预置墙
+  for (const [k,r,c] of LEVELS[levelId].walls) st[k==='H'?'hWalls':'vWalls'].add(key(k,r,c));
+  history = []; busy=false; drag=null; placedFx=null; pendingAnim=null; lastWallTime=0;
+  $('overlay').classList.remove('show');
+  draw();
+}
+
+$('modeAI').onclick = ()=>{ if(mode!=='ai'){ mode='ai'; renderModeBtns(); loadLevels(); restart(); } };
+$('modePVP').onclick = ()=>{ if(mode!=='pvp'){ mode='pvp'; renderModeBtns(); loadLevels(); restart(); } };
+$('btnUndo').onclick = undo;
+$('btnRestart').onclick = restart;
+$('btnAgain').onclick = restart;
+$('btnClose').onclick = ()=> $('overlay').classList.remove('show');
+
+restart();
+</script>
+</body>
+</html>

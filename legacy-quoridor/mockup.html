@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>堵路棋 · 关卡地图（设计样图）</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+    background:#dff3ff; overflow-x:hidden;
+  }
+  /* ===== 顶部资源栏 ===== */
+  .hud{
+    position:fixed; top:0; left:0; right:0; z-index:20;
+    display:flex; align-items:center; gap:10px;
+    padding:10px 14px;
+    background:rgba(255,255,255,.85); backdrop-filter:blur(6px);
+    border-bottom:3px solid #ffd66e;
+  }
+  .avatar{
+    width:44px; height:44px; border-radius:50%;
+    background:#ff6b6b; border:3px solid #fff; position:relative; flex:none;
+    box-shadow:0 2px 0 rgba(0,0,0,.12);
+  }
+  .avatar::before,.avatar::after{ /* 眼睛 */
+    content:""; position:absolute; top:15px; width:6px; height:8px;
+    background:#5a2323; border-radius:50%;
+  }
+  .avatar::before{left:12px;} .avatar::after{right:12px;}
+  .hud .who{line-height:1.2;}
+  .hud .who b{font-size:15px; color:#5a4632;}
+  .hud .who small{display:block; font-size:11px; color:#a08b6f;}
+  .pill{
+    display:flex; align-items:center; gap:5px; margin-left:auto;
+    background:#fff; border:2px solid #ffe1a1; border-radius:20px;
+    padding:4px 12px 4px 6px; font-size:14px; font-weight:bold; color:#b8860b;
+  }
+  .pill + .pill{margin-left:0;}
+  .pill svg{width:20px; height:20px;}
+  .gear{
+    width:38px; height:38px; border:none; border-radius:12px; cursor:pointer;
+    background:#ffe9c2; color:#8a6d3b; font-size:16px; line-height:1;
+  }
+  /* ===== 地图区 ===== */
+  .map{max-width:820px; margin:0 auto;}
+  #scene{display:block; width:100%; height:auto;}
+  .node{cursor:pointer;}
+  .node.locked{cursor:not-allowed;}
+  @keyframes ringpulse{0%{r:30;opacity:.8}100%{r:52;opacity:0}}
+  .ring{animation:ringpulse 1.4s ease-out infinite;}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  .current-flag{animation:bob 1.2s ease-in-out infinite; transform-origin:center;}
+  @keyframes sway{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}
+  .boss-fruit{animation:sway 3s ease-in-out infinite; transform-origin:50% 8%;}
+  .shake{animation:shake .4s;}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+  /* ===== 关卡卡片弹窗 ===== */
+  .sheet{
+    position:fixed; left:50%; bottom:86px; transform:translateX(-50%) translateY(30px);
+    width:min(480px, calc(100% - 32px)); z-index:30;
+    background:#fffdf5; border:4px solid #ffd66e; border-radius:24px;
+    padding:20px 22px; opacity:0; pointer-events:none; transition:.25s;
+    box-shadow:0 8px 30px rgba(90,70,50,.25);
+  }
+  .sheet.show{opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0);}
+  .sheet h3{font-size:20px; color:#5a4632; margin-bottom:4px;}
+  .sheet .goal{font-size:13px; color:#8a7a63; line-height:1.7; margin-bottom:10px;}
+  .sheet .tags{display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;}
+  .tag{font-size:12px; padding:4px 10px; border-radius:14px; background:#eef7e6; color:#4e7d2b; border:1px solid #cbe3b3;}
+  .tag.buff{background:#fff3d6; color:#a06a00; border-color:#f5dc9a;}
+  .sheet .stars{display:flex; gap:6px; margin-bottom:14px;}
+  .btn{
+    width:100%; padding:14px 0; border:none; border-radius:18px; cursor:pointer;
+    background:#ff6b6b; color:#fff; font-size:18px; font-weight:bold;
+    box-shadow:0 5px 0 #d94b4b; transition:.1s;
+  }
+  .btn:active{transform:translateY(4px); box-shadow:0 1px 0 #d94b4b;}
+  .close{
+    position:absolute; top:-14px; right:-10px; width:38px; height:38px;
+    border-radius:50%; border:3px solid #fff; background:#ffb35c; color:#fff;
+    font-size:16px; font-weight:bold; cursor:pointer;
+  }
+  /* ===== 底部导航 ===== */
+  .tabbar{
+    position:fixed; left:50%; bottom:0; transform:translateX(-50%);
+    width:min(820px,100%); z-index:20;
+    display:flex; background:rgba(255,255,255,.92); backdrop-filter:blur(6px);
+    border-top:3px solid #ffd66e; border-radius:22px 22px 0 0;
+  }
+  .tab{
+    flex:1; border:none; background:none; padding:10px 0 12px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    color:#b0a289; font-size:11px;
+  }
+  .tab svg{width:24px; height:24px;}
+  .tab.active{color:#ff6b6b;}
+</style>
+</head>
+<body>
+
+<header class="hud">
+  <div class="avatar"></div>
+  <div class="who"><b>小棋手</b><small>果园山 · 新芽段位</small></div>
+  <div class="pill">
+    <svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.2 6.6.8-4.9 4.6 1.3 6.6L12 16.9 6.1 20.2l1.3-6.6L2.5 9l6.6-.8z" fill="#ffcf3e" stroke="#e0a800" stroke-width="1.5"/></svg>
+    23
+  </div>
+  <div class="pill">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ffcf3e" stroke="#e0a800" stroke-width="2"/><circle cx="12" cy="12" r="5" fill="none" stroke="#e0a800" stroke-width="1.5"/></svg>
+    128
+  </div>
+  <button class="gear" title="设置">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#8a6d3b" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+  </button>
+</header>
+
+<div class="map">
+<svg id="scene" viewBox="0 0 800 1500">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#aee4ff"/><stop offset="1" stop-color="#eafaff"/>
+    </linearGradient>
+    <linearGradient id="hill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8fd16e"/><stop offset="1" stop-color="#6dbb4e"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="800" height="1500" fill="url(#sky)"/>
+
+  <!-- 太阳 -->
+  <circle cx="700" cy="110" r="46" fill="#ffde59"/>
+  <circle cx="700" cy="110" r="58" fill="#ffde59" opacity=".35"/>
+
+  <!-- 云 -->
+  <g fill="#ffffff" opacity=".9">
+    <ellipse cx="140" cy="150" rx="52" ry="20"/><ellipse cx="180" cy="138" rx="36" ry="16"/>
+    <ellipse cx="620" cy="330" rx="46" ry="17"/><ellipse cx="655" cy="320" rx="30" ry="13"/>
+    <ellipse cx="120" cy="560" rx="44" ry="16"/><ellipse cx="660" cy="840" rx="48" ry="17"/>
+    <ellipse cx="150" cy="1080" rx="42" ry="15"/><ellipse cx="640" cy="1260" rx="46" ry="16"/>
+  </g>
+
+  <!-- 草地丘陵 -->
+  <ellipse cx="120" cy="1460" rx="420" ry="230" fill="url(#hill)"/>
+  <ellipse cx="700" cy="1480" rx="460" ry="250" fill="#9edd7f"/>
+  <ellipse cx="400" cy="1520" rx="520" ry="240" fill="#7cc75c"/>
+
+  <!-- 大树（章节地标 + BOSS 挂果） -->
+  <g>
+    <rect x="382" y="240" width="36" height="120" rx="14" fill="#9c6b43"/>
+    <circle cx="400" cy="190" r="86" fill="#57a94e"/>
+    <circle cx="330" cy="220" r="56" fill="#6cc25e"/>
+    <circle cx="472" cy="218" r="58" fill="#4c9b44"/>
+    <circle cx="368" cy="150" r="44" fill="#6cc25e"/>
+    <!-- 树上的装饰果 -->
+    <circle cx="352" cy="196" r="9" fill="#ff8f6b"/><circle cx="428" cy="168" r="9" fill="#ff8f6b"/><circle cx="452" cy="230" r="9" fill="#ffd35c"/>
+  </g>
+  <!-- BOSS 果（挂着） -->
+  <g class="node boss-fruit" data-level="10">
+    <rect x="394" y="300" width="10" height="46" rx="5" fill="#7a5a38"/>
+    <circle cx="399" cy="386" r="40" fill="#8e6fd8" stroke="#6a4fc0" stroke-width="4"/>
+    <circle cx="386" cy="378" r="5" fill="#fff"/><circle cx="412" cy="378" r="5" fill="#fff"/>
+    <circle cx="386" cy="378" r="2.5" fill="#3a2a6e"/><circle cx="412" cy="378" r="2.5" fill="#3a2a6e"/>
+    <path d="M388 398q11 9 22 0" fill="none" stroke="#3a2a6e" stroke-width="3" stroke-linecap="round"/>
+    <rect x="359" y="432" width="80" height="26" rx="13" fill="#5a3ea8"/>
+    <text x="399" y="450" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">BOSS</text>
+  </g>
+
+  <!-- 上山小路 -->
+  <path id="trail" d="M 400 1400
+    C 400 1360 290 1345 295 1300
+    C 300 1258 430 1285 432 1240
+    C 434 1198 325 1195 328 1150
+    C 331 1106 452 1105 450 1060
+    C 448 1015 335 1015 338 970
+    C 341 926 452 925 450 880
+    C 448 836 335 835 338 790
+    C 341 746 452 745 450 700
+    C 448 656 345 655 348 610
+    C 351 566 395 565 400 520
+    C 404 480 399 470 399 440"
+    fill="none" stroke="#e8c48a" stroke-width="30" stroke-linecap="round"/>
+  <path d="M 400 1400
+    C 400 1360 290 1345 295 1300 C 300 1258 430 1285 432 1240
+    C 434 1198 325 1195 328 1150 C 331 1106 452 1105 450 1060
+    C 448 1015 335 1015 338 970 C 341 926 452 925 450 880
+    C 448 836 335 835 338 790 C 341 746 452 745 450 700
+    C 448 656 345 655 348 610 C 351 566 395 565 400 520"
+    fill="none" stroke="#fff" stroke-width="5" stroke-dasharray="2 22" stroke-linecap="round" opacity=".8"/>
+
+  <!-- 起点木牌 -->
+  <g>
+    <rect x="416" y="1382" width="10" height="52" rx="4" fill="#9c6b43"/>
+    <rect x="384" y="1356" width="76" height="34" rx="8" fill="#c9975c" stroke="#9c6b43" stroke-width="3"/>
+    <text x="422" y="1379" text-anchor="middle" font-size="15" font-weight="bold" fill="#5a4632">出发</text>
+  </g>
+
+  <!-- 关卡果实由 JS 生成 -->
+  <g id="fruits"></g>
+
+  <!-- 小花点缀 -->
+  <g id="flowers"></g>
+</svg>
+</div>
+
+<!-- 关卡弹窗 -->
+<div class="sheet" id="sheet">
+  <button class="close" id="closeSheet">×</button>
+  <h3 id="shTitle"></h3>
+  <div class="goal" id="shGoal"></div>
+  <div class="tags" id="shTags"></div>
+  <div class="stars" id="shStars"></div>
+  <button class="btn" id="shStart">开始挑战</button>
+</div>
+
+<!-- 底部导航 -->
+<nav class="tabbar">
+  <button class="tab active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+    主页
+  </button>
+  <button class="tab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20c2-8 6-12 8-12s6 4 8 12"/><circle cx="12" cy="5" r="2.5"/></svg>
+    关卡
+  </button>
+  <button class="tab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="12" r="4.5"/><circle cx="16.5" cy="12" r="4.5"/></svg>
+    对战
+  </button>
+  <button class="tab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2.4 5 5.6.7-4.1 3.9 1 5.4-4.9-2.6-4.9 2.6 1-5.4L4 8.7l5.6-.7z"/></svg>
+    成就
+  </button>
+</nav>
+
+<script>
+"use strict";
+/* 关卡数据（与 LEVELS_DESIGN.md 对应，真实项目里由关卡配置生成） */
+const LEVELS = [
+  {n:1,  name:'新手村',   x:295,  y:1300, st:'done', stars:3, desc:'空棋盘，AI 只会走子。学会走子与画墙。', tags:['走子','画墙']},
+  {n:2,  name:'第一堵墙', x:432,  y:1240, st:'done', stars:2, desc:'AI 只有 4 面墙，用你的墙教它做人。', tags:['进攻放墙']},
+  {n:3,  name:'窄门',     x:328,  y:1150, st:'done', stars:3, desc:'中部只有两条窄路，谁卡住门谁占优。', tags:['地形','咽喉点']},
+  {n:4,  name:'贴身战',   x:450,  y:1060, st:'cur',  stars:0, desc:'两球贴面开局！卡住对方，别让它过去。', tags:['不许重叠','卡位']},
+  {n:5,  name:'回廊迷宫', x:338,  y:970,  st:'lock', stars:0, desc:'蛇形长廊，路很长，小心 AI 封你的路。', tags:['迷宫','长线规划']},
+  {n:6,  name:'破壁锤',   x:450,  y:880,  st:'lock', stars:0, desc:'获得一次性 buff「破壁」：拆掉任意一堵墙。', tags:['buff','破壁']},
+  {n:7,  name:'疾行对决', x:338,  y:790,  st:'lock', stars:0, desc:'双方各一次「疾行」：直线连走两格。', tags:['buff','疾行']},
+  {n:8,  name:'细雨',     x:450,  y:700,  st:'lock', stars:0, desc:'规则变体：墙长只有 1 格，各 15 面。', tags:['变体','短墙']},
+  {n:9,  name:'独门',     x:348,  y:610,  st:'lock', stars:0, desc:'终点收窄成中央一格「门」，对角出发。', tags:['变体','门式终点']},
+];
+const BOSS = {n:10, name:'巨人棋局', st:'lock', stars:0, desc:'迷宫+窄门+双方破壁，前九关的毕业考。', tags:['BOSS','全机制']};
+
+const NS='http://www.w3.org/2000/svg';
+const $=id=>document.getElementById(id);
+function el(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);parent.appendChild(e);return e;}
+
+function drawFruit(l){
+  const g=el('g',{class:'node'+(l.st==='lock'?' locked':''),'data-level':l.n},$('fruits'));
+  const r = l.st==='lock' ? 22 : 27;
+  const fill = l.st==='lock' ? '#b9c9ae' : '#ff6b6b';
+  const stroke = l.st==='lock' ? '#94a888' : '#d94b4b';
+  if (l.st==='cur') el('circle',{cx:l.x,cy:l.y,r:30,fill:'none',stroke:'#ffcf3e','stroke-width':5,class:'ring'},g);
+  // 果柄和叶
+  el('rect',{x:l.x-3,y:l.y-r-10,width:6,height:14,rx:3,fill:'#8a6d3b'},g);
+  if (l.st!=='lock') el('ellipse',{cx:l.x+12,cy:l.y-r-8,rx:10,ry:5,fill:'#57a94e',transform:`rotate(-25 ${l.x+12} ${l.y-r-8})`},g);
+  else el('ellipse',{cx:l.x+9,cy:l.y-r-7,rx:8,ry:4,fill:'#9fb394',transform:`rotate(-25 ${l.x+9} ${l.y-r-7})`},g);
+  // 果身
+  el('circle',{cx:l.x,cy:l.y,r:r,fill:fill,stroke:stroke,'stroke-width':4},g);
+  // 高光
+  el('circle',{cx:l.x-r*0.35,cy:l.y-r*0.4,r:r*0.22,fill:'#fff',opacity:.55},g);
+  // 表情
+  if (l.st!=='lock'){
+    el('circle',{cx:l.x-8,cy:l.y-4,r:3,fill:'#5a2323'},g);
+    el('circle',{cx:l.x+8,cy:l.y-4,r:3,fill:'#5a2323'},g);
+    el('path',{d:`M${l.x-7} ${l.y+8} q7 6 14 0`,fill:'none',stroke:'#5a2323','stroke-width':2.5,'stroke-linecap':'round'},g);
+  } else {
+    // 锁：挂一个小锁图形
+    el('rect',{x:l.x-8,y:l.y-3,width:16,height:13,rx:3,fill:'#7d8a74'},g);
+    el('path',{d:`M${l.x-4} ${l.y-3} v-3 a4 4 0 0 1 8 0 v3`,fill:'none',stroke:'#7d8a74','stroke-width':3},g);
+  }
+  // 编号牌
+  el('circle',{cx:l.x,cy:l.y+r+14,r:11,fill:'#fff',stroke:'#ffd66e','stroke-width':3},g);
+  const t=el('text',{x:l.x,y:l.y+r+15,'text-anchor':'middle','dominant-baseline':'central','font-size':12,'font-weight':'bold',fill:'#5a4632'},g);
+  t.textContent=l.n;
+  // 星星
+  if (l.st==='done'){
+    for(let i=0;i<3;i++){
+      const sx=l.x+(i-1)*18, sy=l.y+r+34;
+      star(sx,sy,l.stars>i,$('fruits'));
+    }
+  }
+  if (l.st==='cur'){
+    // 当前位置小旗
+    const f=el('g',{class:'current-flag'},g);
+    el('rect',{x:l.x-2,y:l.y-r-46,width:4,height:26,rx:2,fill:'#8a6d3b'},f);
+    el('path',{d:`M${l.x+2} ${l.y-r-46} h20 l-6 7 6 7 h-20 z`,fill:'#ff6b6b',stroke:'#d94b4b','stroke-width':2},f);
+  }
+  g.addEventListener('click',()=>onNode(l));
+  return g;
+}
+function star(cx,cy,on,parent){
+  const pts=[]; const R=8,r=3.4;
+  for(let i=0;i<10;i++){
+    const rad=i%2===0?R:r, a=-Math.PI/2 + i*Math.PI/5;
+    pts.push((cx+rad*Math.cos(a)).toFixed(1)+','+(cy+rad*Math.sin(a)).toFixed(1));
+  }
+  el('polygon',{points:pts.join(' '),fill:on?'#ffcf3e':'#e4e0d2',stroke:on?'#e0a800':'#c9c4b2','stroke-width':1.5},parent);
+}
+function drawBoss(){
+  // BOSS 果已有静态造型，这里补星星与锁定遮罩逻辑（示例：未解锁时灰一点）
+  // 真实项目里 BOSS 状态同样走 LEVELS 数据
+}
+function drawFlowers(){
+  const spots=[[160,1330],[560,1300],[220,1120],[590,1010],[190,880],[580,760],[210,640],[560,560]];
+  spots.forEach(([x,y],i)=>{
+    const g=el('g',{},$('flowers'));
+    const c=['#ff9db8','#ffd35c','#9dc8ff','#ff9db8'][i%4];
+    for(let p=0;p<5;p++){
+      const a=p/5*Math.PI*2;
+      el('circle',{cx:x+7*Math.cos(a),cy:y+7*Math.sin(a),r:4.5,fill:c},g);
+    }
+    el('circle',{cx:x,cy:y,r:3.5,fill:'#fff'},g);
+  });
+}
+let curSel=null;
+function onNode(l){
+  const sheet=$('sheet');
+  if (l.st==='lock'){
+    const g=document.querySelector(`.node[data-level="${l.n}"]`);
+    if (g){ g.classList.remove('shake'); void g.offsetWidth; g.classList.add('shake'); }
+    return;
+  }
+  curSel=l;
+  $('shTitle').textContent = `第 ${l.n} 关 · ${l.name}`;
+  $('shGoal').textContent = l.desc;
+  $('shTags').innerHTML = l.tags.map(t=>`<span class="tag${t.includes('buff')||t==='破壁'||t==='疾行'?' buff':''}">${t}</span>`).join('');
+  $('shStars').innerHTML = [0,1,2].map(i=>{
+    const on=l.stars>i;
+    return `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 2l2.9 6.2 6.6.8-4.9 4.6 1.3 6.6L12 16.9 6.1 20.2l1.3-6.6L2.5 9l6.6-.8z" fill="${on?'#ffcf3e':'#e4e0d2'}" stroke="${on?'#e0a800':'#c9c4b2'}" stroke-width="1.5"/></svg>`;
+  }).join('');
+  $('shStart').textContent = l.st==='cur' ? '开始挑战' : '重玩本关';
+  sheet.classList.add('show');
+}
+$('closeSheet').onclick=()=>$('sheet').classList.remove('show');
+$('shStart').onclick=()=>{ alert('样图示意：这里会跳进对局页（现有棋盘 UI 换童趣皮肤）'); };
+
+LEVELS.forEach(drawFruit);
+drawBoss();
+drawFlowers();
+// 初始定位到当前关卡附近
+window.addEventListener('load',()=>{
+  const cur=LEVELS.find(l=>l.st==='cur')||LEVELS[0];
+  window.scrollTo(0, Math.max(0, cur.y/1500*(document.body.scrollHeight-innerHeight) - 200));
+});
+</script>
+</body>
+</html>
